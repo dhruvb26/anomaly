@@ -1,0 +1,181 @@
+---
+alwaysApply: true
+---
+---
+description: Bun + TurboRepo monorepo conventions for the Sloth project.
+globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json, turbo.json"
+alwaysApply: true
+---
+
+# Sloth Monorepo Conventions
+
+This is a **TurboRepo monorepo** using **Bun** as the package manager and runtime.
+
+## Project Structure
+
+```
+sloth/
+├── apps/
+│   ├── web/          # Next.js main application
+│   ├── docs/         # Next.js documentation site
+│   └── api/          # Hono + Bun backend API
+├── packages/
+│   ├── ui/           # Shared React components
+│   ├── typescript-config/  # Shared tsconfig files
+│   └── eslint-config/      # Shared ESLint configs
+├── turbo.json        # TurboRepo pipeline config
+└── package.json      # Root workspace config
+```
+
+## Package Manager: Bun
+
+Always use Bun instead of npm/yarn/pnpm:
+
+- `bun install` instead of `npm install`
+- `bun add <pkg>` instead of `npm install <pkg>`
+- `bun add -d <pkg>` for dev dependencies
+- `bun remove <pkg>` to uninstall
+- `bun run <script>` instead of `npm run <script>`
+
+## TurboRepo Commands
+
+Run tasks across the monorepo from the **root directory**:
+
+```sh
+bun run dev          # Start all apps in dev mode
+bun run build        # Build all apps/packages
+bun run lint         # Lint all apps/packages
+bun run check-types  # Type-check all apps/packages
+```
+
+Run tasks for a specific app:
+
+```sh
+turbo run dev --filter=@sloth/api      # Run only the API
+turbo run dev --filter=web             # Run only the web app
+turbo run build --filter=./apps/*      # Build only apps
+turbo run dev --filter=...@repo/ui     # Run app + its dependencies
+```
+
+## Workspaces & Internal Packages
+
+Internal packages use `workspace:*` protocol:
+
+```json
+{
+  "dependencies": {
+    "@repo/ui": "workspace:*",
+    "@repo/typescript-config": "workspace:*"
+  }
+}
+```
+
+Package naming conventions:
+- Apps: `@sloth/<app-name>` (e.g., `@sloth/api`, `@sloth/web`)
+- Shared packages: `@repo/<package-name>` (e.g., `@repo/ui`, `@repo/typescript-config`)
+
+## App-Specific Guidelines
+
+### `apps/web` & `apps/docs` (Next.js)
+
+- Use Next.js conventions (App Router, Server Components)
+- Import shared UI from `@repo/ui`
+- Extend `@repo/typescript-config/nextjs.json` for tsconfig
+- Use Server Actions for simple mutations
+- Use `apps/api` for complex backend logic
+
+### `apps/api` (Hono + Bun)
+
+- Use **Hono** framework (not Express)
+- Use **@hono/clerk-auth** for authentication
+- Extend `@repo/typescript-config/bun.json` for tsconfig
+- Run with `bun --watch src/index.ts` for dev
+- Bun automatically loads `.env` files (no dotenv needed)
+
+Prefer Bun APIs:
+- `Bun.serve()` for HTTP server (or Hono)
+- `bun:sqlite` for SQLite
+- `Bun.file()` over `node:fs`
+- `Bun.$\`command\`` over execa
+
+### `packages/*` (Shared Libraries)
+
+- Export from `src/index.ts`
+- Use `workspace:*` for internal dependencies
+- Extend appropriate tsconfig from `@repo/typescript-config`
+
+## TypeScript Configs
+
+Extend shared configs in `packages/typescript-config/`:
+
+```json
+// apps/web/tsconfig.json (Next.js app)
+{ "extends": "@repo/typescript-config/nextjs.json" }
+
+// apps/api/tsconfig.json (Bun app)  
+{ "extends": "@repo/typescript-config/bun.json" }
+
+// packages/ui/tsconfig.json (React library)
+{ "extends": "@repo/typescript-config/react-library.json" }
+```
+
+## Adding New Apps/Packages
+
+Create new app:
+```sh
+mkdir -p apps/new-app/src
+cd apps/new-app
+bun init -y
+# Add workspace dependencies
+bun add @repo/typescript-config@workspace:*
+```
+
+Create new package:
+```sh
+mkdir -p packages/new-package/src
+cd packages/new-package
+bun init -y
+```
+
+Update `turbo.json` if the new app needs custom build outputs.
+
+## Testing
+
+Use `bun test` for Bun apps:
+
+```ts
+import { test, expect } from "bun:test";
+
+test("example", () => {
+  expect(1 + 1).toBe(2);
+});
+```
+
+## Environment Variables
+
+- `.env` files are auto-loaded by Bun (no dotenv needed)
+- `.env.local` for local overrides (git-ignored)
+- Use `.env.example` for documentation
+- Next.js apps use `NEXT_PUBLIC_*` prefix for client-side env vars
+
+## Common Patterns
+
+### Sharing types across apps
+
+Create `packages/types/`:
+```ts
+// packages/types/src/index.ts
+export interface User {
+  id: string;
+  email: string;
+}
+```
+
+Import in any app:
+```ts
+import type { User } from "@repo/types";
+```
+
+### API client for frontend
+
+Create fetch wrapper in `packages/api-client/` that both Next.js apps can use to call `apps/api`.
