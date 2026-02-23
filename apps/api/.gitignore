@@ -14,5 +14,9 @@ __pycache__/
 # Venvs
 .venv/
 
+# Environment variables
+.env
+.env.local
+
 # LangGraph
 .langgraph_api/
