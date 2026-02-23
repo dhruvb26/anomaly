@@ -9,6 +9,7 @@ __pycache__/
 *.pyzw
 *.pyzwz
 *.pyzwzw
+*.egg-info/
 
 # Venvs
 .venv/
