@@ -1,5 +1,13 @@
 # Anomaly Detection in LLM Agent Systems
 
+<div align="center">
+  <video src="./apps/api/assets/demo.mp4" controls width="600">
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+**NOTE**: The video is sped up and trimmed to show the most relevant parts.
+
 ## What is an anomaly?
 
 Any unexpected behavior or pattern that deviates from normal operating conditions when multiple agents interact (including things like hallucinations, conflicting actions, protocol breakdowns, etc.). The key challenge is combinatorial complexity, as you add agents, interaction patterns explode, and “normal” behavior depends on what other agents are doing.

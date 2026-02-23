@@ -229,14 +229,7 @@ def _infer_routing_edges(
     edges: list[tuple[str, str, dict]] = []
 
     if src_key == tgt_key:
-        attrs = _make_edge_attrs(
-            trace_id, step_lbl, src_key, tgt_key, "routing",
-            turn.index, start_time, seq_no, src_run_id, tgt_run_id,
-            src_trust_val, tgt_priv,
-        )
-        attrs["payload"] = {"target": _next_agent_from_llm_outputs(a)}
-        edges.append((src_key, tgt_key, attrs))
-        return edges, seq_no + 1
+        return edges, seq_no
 
     src_is_sub = src_key in SUB_AGENTS
     tgt_is_sub = tgt_key in SUB_AGENTS
