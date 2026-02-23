@@ -1,0 +1,36 @@
+sentinel:
+  guardian:
+    enabled: true
+    model: "ibm/granite3.3-guardian:8b"
+    base_url: "http://localhost:11434"
+    confidence_threshold: 0.5
+
+  firewall:
+    enabled: true
+    prompt_guard:
+      enabled: true
+    alignment_check:
+      enabled: true
+
+  graph:
+    include_chain_runs: false
+
+  agent_hints:
+    - keyword: "FileSurfer"
+      name: "file_surfer"
+    - keyword: "WebSurfer"
+      name: "web_surfer"
+    - keyword: "CodeExecutor"
+      name: "code_executor"
+    - keyword: "Orchestrator"
+      name: "orchestrator"
+
+  sub_agents:
+    - "file_surfer"
+    - "web_surfer"
+    - "code_executor"
+
+  resource_baselines:
+    enabled: true
+    z_threshold: 2.5
+    min_samples: 3

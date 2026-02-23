@@ -10,16 +10,14 @@ import logging
 import os
 from collections import defaultdict
 
+from src.langsmith_client import get_langsmith_client
+
 logger = logging.getLogger(__name__)
 
-def get_langsmith_client():
-    from langsmith import Client
 
-    return Client()
-
-
-def list_thread_ids(client, project_name: str | None = None) -> list[str]:
+def list_thread_ids(project_name: str | None = None) -> list[str]:
     """Return all unique thread_ids seen in LangSmith runs."""
+    client = get_langsmith_client()
     kwargs: dict = {"is_root": True}
     if project_name:
         kwargs["project_name"] = project_name
@@ -34,16 +32,17 @@ def list_thread_ids(client, project_name: str | None = None) -> list[str]:
                 tid = getattr(run, "session_id", None) or str(getattr(run, "id", ""))
             if tid:
                 thread_ids.add(str(tid))
-    except Exception:
-        logger.exception("Failed to list runs from LangSmith")
+    except Exception as e:
+        logger.exception(f"Failed to list runs from LangSmith: {e}")
         raise
     return list(thread_ids)
 
 
 def fetch_runs_for_thread(
-    client, thread_id: str, project_name: str | None = None
+    thread_id: str, project_name: str | None = None
 ) -> list[dict]:
     """Fetch all runs for a thread_id and return as plain dicts."""
+    client = get_langsmith_client()
     kwargs: dict = {"filter": f'eq(thread_id, "{thread_id}")'}
     if project_name:
         kwargs["project_name"] = project_name
@@ -66,35 +65,24 @@ def group_runs_by_trace(run_dicts: list[dict]) -> dict[str, list[dict]]:
             groups[trace_id].append(r)
     return dict(groups)
 
-def clear_neo4j(db) -> None:
-    """Delete all nodes and relationships from Neo4j."""
-    logger.info("Clearing Neo4j — deleting all nodes and relationships …")
-    db.create("MATCH (n) DETACH DELETE n")
-    logger.info("Neo4j cleared.")
-
-
-def clear_redis(payload_store) -> None:
-    """Delete all run:* keys from Redis."""
-    logger.info("Clearing Redis payload store …")
-    deleted = payload_store.clear()
-    logger.info("Redis cleared — %s key(s) deleted.", deleted)
 
 def ingest_thread(
     thread_id: str,
     run_dicts: list[dict],
     db,
     payload_store,
-) -> bool:
+) -> list | None:
     """Build a Thread graph from run dicts and persist to Neo4j + Redis.
 
-    Returns True on success, False on failure (logs the exception).
+    Returns the list of Turn objects on success so callers (e.g. sentinel)
+    can reuse them without re-fetching. Returns None on failure.
     """
     from src.graph.loaders import load_turn_from_runs
     from src.graph.thread import Thread
 
     if not run_dicts:
         logger.warning("No runs found for thread_id=%s — skipping.", thread_id)
-        return False
+        return None
 
     try:
         trace_groups = group_runs_by_trace(run_dicts)
@@ -111,10 +99,11 @@ def ingest_thread(
             thread.G.number_of_nodes(),
             thread.G.number_of_edges(),
         )
-        return True
+        return turns
     except Exception:
         logger.exception("Failed to ingest thread_id=%s", thread_id)
-        return False
+        return None
+
 
 def run_ingestion(
     db,
@@ -137,19 +126,14 @@ def run_ingestion(
     Returns:
         {"succeeded": int, "failed": int, "thread_ids": list[str]}
     """
-    if clear:
-        clear_neo4j(db)
-        clear_redis(payload_store)
-
     resolved_project = project or os.environ.get("LANGSMITH_PROJECT")
-    client = get_langsmith_client()
 
     if not thread_ids:
         logger.info(
             "Fetching all thread IDs from LangSmith (project=%s) …",
             resolved_project or "default",
         )
-        thread_ids = list_thread_ids(client, project_name=resolved_project)
+        thread_ids = list_thread_ids(project_name=resolved_project)
         logger.info("Found %d thread(s).", len(thread_ids))
 
     if not thread_ids:
@@ -159,7 +143,7 @@ def run_ingestion(
     ok = failed = 0
     for tid in thread_ids:
         logger.info("Fetching runs for thread_id=%s …", tid)
-        run_dicts = fetch_runs_for_thread(client, tid, project_name=resolved_project)
+        run_dicts = fetch_runs_for_thread(tid, project_name=resolved_project)
         success = ingest_thread(tid, run_dicts, db, payload_store)
         if success:
             ok += 1

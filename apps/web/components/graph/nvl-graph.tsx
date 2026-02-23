@@ -11,7 +11,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -68,6 +68,12 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 };
 
 function nodeColor(node: GraphNode): string | undefined {
+  const riskScore = node.node_risk_score as number | undefined;
+  if (riskScore != null && riskScore > 0) {
+    if (riskScore >= 0.7) return "#ef4444";
+    if (riskScore >= 0.4) return "#f59e0b";
+    return "#eab308";
+  }
   const labelKey = (node.label ?? "").toString().toLowerCase();
   const typeKey = (node.type ?? "").toString().toLowerCase();
   return NODE_TYPE_COLORS[labelKey] ?? NODE_TYPE_COLORS[typeKey];
@@ -77,6 +83,33 @@ type SelectedItem =
   | { type: "node"; data: Record<string, unknown> }
   | { type: "edge"; data: Record<string, unknown> }
   | null;
+
+const LEGEND_ITEMS: { color: string; label: string }[] = [
+  { color: "#ef4444", label: "High risk (>= 0.7)" },
+  { color: "#f59e0b", label: "Medium risk (>= 0.4)" },
+  { color: "#eab308", label: "Low risk (> 0)" },
+  { color: NODE_TYPE_COLORS.agent!, label: "Agent / LLM" },
+  { color: NODE_TYPE_COLORS.tool!, label: "Tool" },
+  { color: NODE_TYPE_COLORS.trace!, label: "Trace" },
+  { color: NODE_TYPE_COLORS.session!, label: "Session" },
+  { color: NODE_TYPE_COLORS.thread!, label: "Thread" },
+];
+
+function GraphLegend() {
+  return (
+    <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 rounded-lg border bg-background/90 backdrop-blur-sm px-3 py-2.5 text-xs">
+      {LEGEND_ITEMS.map(({ color, label }) => (
+        <div key={label} className="flex items-center gap-2">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: color }}
+          />
+          <span className="text-muted-foreground">{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function MetadataPanel({ selected }: { selected: SelectedItem }) {
   if (!selected) return null;
@@ -95,6 +128,55 @@ function MetadataPanel({ selected }: { selected: SelectedItem }) {
 }
 
 const API_URL = env.NEXT_PUBLIC_LANGSMITH_API_URL;
+
+function SentinelReportView({ threadId }: { threadId: string | null }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [report, setReport] = useState<Record<string, any> | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!threadId || !API_URL) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetch(`${API_URL}/threads/${threadId}/sentinel`)
+      .then((res) => {
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(String(res.status));
+        return res.json();
+      })
+      .then((data) => setReport(data))
+      .catch(() => setReport(null))
+      .finally(() => setLoading(false));
+  }, [threadId]);
+
+  if (loading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+        <p className="text-center text-base">No report available. Run the thread to generate one.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto p-4">
+      <JsonView
+        value={report}
+        collapsed={2}
+        style={{ fontSize: "12px" }}
+      />
+    </div>
+  );
+}
 
 function ToolbarButton({
   tooltip,
@@ -124,8 +206,12 @@ function ToolbarButton({
   );
 }
 
+type ViewMode = "graph" | "report";
+
 function GraphToolbar({
   threadId,
+  view,
+  onViewChange,
   onIngestComplete,
   zoomIn,
   zoomOut,
@@ -133,6 +219,8 @@ function GraphToolbar({
   hasGraph,
 }: {
   threadId?: string;
+  view: ViewMode;
+  onViewChange: (v: ViewMode) => void;
   onIngestComplete?: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -161,10 +249,12 @@ function GraphToolbar({
   }, [threadId, onIngestComplete]);
 
   const handleClear = useCallback(async () => {
-    if (!API_URL) return;
+    if (!API_URL || !threadId) return;
     setClearing(true);
     try {
-      const res = await fetch(`${API_URL}/ingest`, { method: "DELETE" });
+      const res = await fetch(`${API_URL}/ingest/${threadId}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error(`Clear failed: ${res.status}`);
       onIngestComplete?.();
     } catch (err) {
@@ -172,7 +262,7 @@ function GraphToolbar({
     } finally {
       setClearing(false);
     }
-  }, [onIngestComplete]);
+  }, [threadId, onIngestComplete]);
 
   return (
     <TooltipProvider>
@@ -193,9 +283,9 @@ function GraphToolbar({
           <div className="mx-1 h-4 w-px bg-border" />
 
           <ToolbarButton
-            tooltip="Clear"
+            tooltip="Clear this thread"
             onClick={handleClear}
-            disabled={clearing}
+            disabled={clearing || !threadId}
           >
             {clearing ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -205,25 +295,50 @@ function GraphToolbar({
           </ToolbarButton>
         </div>
 
+        <div className="flex rounded-md border border-border bg-muted/30 p-0.5">
+          <button
+            type="button"
+            onClick={() => onViewChange("graph")}
+            className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+              view === "graph"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Graph
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewChange("report")}
+            className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+              view === "report"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Report
+          </button>
+        </div>
+
         <div className="flex items-center gap-0.5">
           <ToolbarButton
             tooltip="Zoom in"
             onClick={zoomIn}
-            disabled={!hasGraph}
+            disabled={!hasGraph || view === "report"}
           >
             <ZoomIn className="h-5 w-5" />
           </ToolbarButton>
           <ToolbarButton
             tooltip="Zoom out"
             onClick={zoomOut}
-            disabled={!hasGraph}
+            disabled={!hasGraph || view === "report"}
           >
             <ZoomOut className="h-5 w-5" />
           </ToolbarButton>
           <ToolbarButton
             tooltip="Fit to screen"
             onClick={fitAll}
-            disabled={!hasGraph}
+            disabled={!hasGraph || view === "report"}
           >
             <Maximize2 className="h-5 w-5" />
           </ToolbarButton>
@@ -247,6 +362,7 @@ export function NvlGraph({
   onGraphUpdate,
 }: NvlGraphProps) {
   const [selected, setSelected] = useState<SelectedItem>(null);
+  const [view, setView] = useState<ViewMode>("graph");
   const nvlRef = useRef<NVL>(null);
 
   const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]));
@@ -309,6 +425,8 @@ export function NvlGraph({
     <div className="flex h-full w-full flex-col">
       <GraphToolbar
         threadId={threadId}
+        view={view}
+        onViewChange={setView}
         onIngestComplete={onGraphUpdate}
         zoomIn={zoomIn}
         zoomOut={zoomOut}
@@ -317,7 +435,9 @@ export function NvlGraph({
       />
 
       <div className="relative min-h-0 flex-1">
-        {!hasGraph ? (
+        {view === "report" ? (
+          <SentinelReportView threadId={threadId ?? null} />
+        ) : !hasGraph ? (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
             <p className="text-center text-base">
               Ingest the thread to see the graph.
@@ -344,6 +464,7 @@ export function NvlGraph({
                 onCanvasClick,
               }}
             />
+            <GraphLegend />
             <MetadataPanel selected={selected} />
           </>
         )}

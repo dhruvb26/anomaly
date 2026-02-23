@@ -379,6 +379,21 @@ export default function ThreadPage() {
     });
   }, [stream.sentinelResult]);
 
+  // Resource anomaly toast
+  useEffect(() => {
+    const s = stream.sentinelResult;
+    if (!s?.resource_anomalies?.length) return;
+    toast.warning("Resource Anomaly", {
+      description: `${s.resource_anomalies.length} node(s) with abnormal usage`,
+      duration: Number.POSITIVE_INFINITY,
+    });
+  }, [stream.sentinelResult]);
+
+  // Re-fetch graph after run response so risk-colored nodes appear
+  useEffect(() => {
+    if (stream.sentinelResult != null && threadId) fetchGraph();
+  }, [stream.sentinelResult, threadId, fetchGraph]);
+
   if (error && !isThreadLoading && messages.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">

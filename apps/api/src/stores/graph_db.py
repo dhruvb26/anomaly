@@ -14,13 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class GraphDB:
-    """Neo4j connection and schema helpers. Uses NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD."""
+    """Neo4j connection and schema helpers."""
 
     def __init__(self) -> None:
         uri = os.getenv("NEO4J_URI")
         auth = (os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
-        if not uri:
-            raise RuntimeError("NEO4J_URI is required")
         self.driver = GraphDatabase.driver(uri, auth=auth)
 
     def close(self) -> None:
@@ -29,8 +27,8 @@ class GraphDB:
     def verify_connectivity(self) -> None:
         try:
             self.driver.verify_connectivity()
-        except Exception:
-            logger.exception("Neo4j verify_connectivity failed")
+        except Exception as e:
+            logger.exception(f"Neo4j verify_connectivity failed: {e}")
             raise
 
     def setup_schema(self, database_: str = "neo4j") -> None:
@@ -55,6 +53,9 @@ class GraphDB:
                 self.driver.execute_query(cypher, database_=database_)
             except Exception as e:
                 logger.debug("Schema step skipped or failed: %s", e)
+        logger.info(
+            "Neo4j schema ready — %d constraints/indexes ensured", len(constraints_and_indexes)
+        )
 
     def query(
         self,
@@ -70,8 +71,8 @@ class GraphDB:
                 parameters_=parameters,
                 database_=database_,
             )
-        except Exception:
-            logger.exception("Neo4j query failed")
+        except Exception as e:
+            logger.exception(f"Neo4j query failed: {e}")
             raise
         results = [record.data() for record in records]
         logger.debug(
@@ -90,12 +91,12 @@ class GraphDB:
         """Execute a write query; return driver summary."""
         parameters = parameters or {}
         try:
-            records, summary, _ = self.driver.execute_query(
+            _, summary, _ = self.driver.execute_query(
                 query,
                 parameters_=parameters,
                 database_=database_,
             )
-        except Exception:
-            logger.exception("Neo4j create failed")
+        except Exception as e:
+            logger.exception(f"Neo4j create failed: {e}")
             raise
         return summary

@@ -44,16 +44,6 @@ def serialize_message(msg: Any) -> dict[str, Any]:
     return d
 
 
-def row_to_thread(r: tuple) -> dict[str, Any]:
-    """Shape expected by app-sidebar: thread_id, created_at, updated_at, metadata."""
-    return {
-        "thread_id": r[0],
-        "created_at": r[1].isoformat() if r[1] else None,
-        "updated_at": r[2].isoformat() if r[2] else None,
-        "metadata": r[3] or {},
-    }
-
-
 def deserialize_message(d: dict[str, Any]) -> BaseMessage:
     """Convert a frontend message dict to a LangChain message."""
     msg_type = d.get("type", "human")
@@ -63,7 +53,6 @@ def deserialize_message(d: dict[str, Any]) -> BaseMessage:
     additional_kwargs = d.get("additional_kwargs") or {}
 
     if isinstance(content, list):
-        # Leave as list of content blocks (e.g. [{"type": "text", "text": "..."}])
         pass
     elif not isinstance(content, str):
         content = str(content) if content is not None else ""
@@ -97,3 +86,13 @@ def deserialize_message(d: dict[str, Any]) -> BaseMessage:
         return ToolMessage(content=content, tool_call_id=tool_call_id, **kwargs)
 
     return HumanMessage(content=content, **kwargs)
+
+
+def row_to_thread(r: tuple) -> dict[str, Any]:
+    """Shape expected by app-sidebar: thread_id, created_at, updated_at, metadata."""
+    return {
+        "thread_id": r[0],
+        "created_at": r[1].isoformat() if r[1] else None,
+        "updated_at": r[2].isoformat() if r[2] else None,
+        "metadata": r[3] or {},
+    }

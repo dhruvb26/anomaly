@@ -8,10 +8,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import AsyncPostgresStore
-
 from src import state
 from src.config import check_env, get_db_uri
-from src.db import ensure_threads_table
+from src.db import ensure_sentinel_reports_table, ensure_threads_table
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +23,7 @@ async def lifespan(_app: FastAPI):
 
     check_env()
     await ensure_threads_table()
+    await ensure_sentinel_reports_table()
 
     db_uri = get_db_uri()
     try:
@@ -45,8 +45,8 @@ async def lifespan(_app: FastAPI):
                     "Server ready — graph compiled with Postgres checkpointer + store"
                 )
                 yield
-    except Exception:
-        logger.exception("Failed to start checkpointer/store or compile graph")
+    except Exception as e:
+        logger.exception(f"Failed to start checkpointer/store or compile graph: {e}")
         raise
     finally:
         if state.graph_db is not None:

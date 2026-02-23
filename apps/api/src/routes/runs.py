@@ -48,12 +48,21 @@ async def run_thread(thread_id: str, body: RunRequest):
     except Exception:
         logger.exception("Failed to read final state for thread %s", thread_id)
 
-    results = await asyncio.gather(
-        asyncio.to_thread(auto_ingest, thread_id),
-        asyncio.to_thread(run_sentinel, thread_id),
-        return_exceptions=True,
-    )
-    graph_ready = results[0] if isinstance(results[0], bool) else False
-    sentinel_result = results[1] if isinstance(results[1], dict) else None
+    turns = None
+    try:
+        turns = await asyncio.to_thread(auto_ingest, thread_id)
+    except Exception:
+        logger.exception("Auto-ingest failed for thread %s", thread_id)
 
-    return {"messages": messages, "graph_ready": graph_ready, "sentinel": sentinel_result}
+    sentinel_result = None
+    if turns:
+        try:
+            sentinel_result = await asyncio.to_thread(run_sentinel, thread_id, turns=turns)
+        except Exception:
+            logger.exception("Sentinel failed for thread %s", thread_id)
+
+    return {
+        "messages": messages,
+        "graph_ready": turns is not None,
+        "sentinel": sentinel_result,
+    }

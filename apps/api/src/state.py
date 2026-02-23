@@ -1,17 +1,14 @@
-"""Shared mutable application state set during lifespan startup.
-
-Import this module and access attributes directly (e.g. ``state.graph``) so
-that mutations made during the lifespan are visible to all callers. Never use
-``from src.state import graph`` — that captures the initial ``None`` value.
-"""
+"""Shared mutable application state set during lifespan startup."""
 
 from __future__ import annotations
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import AsyncPostgresStore
+from src.stores.graph_db import GraphDB
+from src.stores.payload_store import PayloadStore
 
 checkpointer: AsyncPostgresSaver | None = None
 store: AsyncPostgresStore | None = None
 graph = None
-graph_db = None
-payload_store = None
+graph_db: GraphDB | None = None
+payload_store: PayloadStore | None = None

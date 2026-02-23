@@ -60,13 +60,40 @@ async def clear_stores():
             status_code=503, detail="Graph DB / payload store not initialised"
         )
 
-    from src.services.ingestion import clear_neo4j, clear_redis
+    from src.helpers.ingestion import clear_neo4j, clear_redis
 
     try:
         await asyncio.to_thread(clear_neo4j, state.graph_db)
         await asyncio.to_thread(clear_redis, state.payload_store)
     except Exception as exc:
         logger.exception("Clear failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"ok": True}
+
+
+@router.delete("/ingest/{thread_id}")
+async def clear_thread(thread_id: str):
+    """Remove only this thread's graph data from Neo4j and associated run payloads from Redis."""
+    if state.graph_db is None or state.payload_store is None:
+        raise HTTPException(
+            status_code=503, detail="Graph DB / payload store not initialised"
+        )
+
+    from src.helpers.ingestion import (
+        _collect_run_ids_for_thread,
+        clear_thread_neo4j,
+        clear_thread_redis,
+    )
+
+    try:
+        run_ids = await asyncio.to_thread(
+            _collect_run_ids_for_thread, state.graph_db, thread_id
+        )
+        await asyncio.to_thread(clear_thread_neo4j, state.graph_db, thread_id)
+        await asyncio.to_thread(clear_thread_redis, state.payload_store, run_ids)
+    except Exception as exc:
+        logger.exception("Clear thread failed for %s", thread_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"ok": True}

@@ -57,13 +57,13 @@ def load_prompts() -> dict[str, str]:
     """Pull orchestrator and agent prompts from LangSmith. Returns dict of name -> system text.
     On LangSmith failure (e.g. 500, network, or missing prompts), returns fallback prompts so the app can start.
     """
-    from langsmith import Client
+    from src.langsmith_client import get_langsmith_client
 
     _now = datetime.now(timezone.utc)
     _date_str = _now.strftime("%A, %B %d, %Y %I:%M %p UTC")
     base_names = ("orchestrator", "file_surfer", "web_surfer", "code_executor")
     try:
-        client = Client()
+        client = get_langsmith_client()
         out: dict[str, str] = {}
         workspace_id = os.environ.get("LANGSMITH_WORKSPACE_ID", "")
         prompt_index: dict[str, str] = {}

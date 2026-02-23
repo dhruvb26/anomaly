@@ -12,6 +12,13 @@ export type SentinelResult = {
   tier: number;
   summary: string;
   recommendations: string[];
+  resource_anomalies?: {
+    node_name: string;
+    metric: string;
+    value: number;
+    mean: number;
+    z_score: number;
+  }[];
 };
 
 export type ChatStream = {

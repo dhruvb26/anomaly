@@ -142,6 +142,37 @@ async def get_thread_state(thread_id: str):
     return {"messages": []}
 
 
+@router.get("/threads/{thread_id}/sentinel")
+async def get_sentinel_report(thread_id: str):
+    """Return the most recent sentinel report for the thread, or 404 if none."""
+    db_uri = get_db_uri()
+    try:
+        async with await psycopg.AsyncConnection.connect(db_uri) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT id, thread_id, created_at, max_tier, summary, recommendations, turn_analyses, resource_anomalies "
+                    "FROM sentinel_reports WHERE thread_id = %s "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (thread_id,),
+                )
+                row = await cur.fetchone()
+    except Exception:
+        logger.exception("Failed to get sentinel report for thread %s", thread_id)
+        raise
+    if not row:
+        raise HTTPException(status_code=404, detail="No sentinel report for this thread")
+    return {
+        "id": row[0],
+        "thread_id": row[1],
+        "created_at": row[2].isoformat() if row[2] else None,
+        "max_tier": row[3],
+        "summary": row[4],
+        "recommendations": row[5] or [],
+        "turn_analyses": row[6] or [],
+        "resource_anomalies": (row[7] or []) if len(row) > 7 else [],
+    }
+
+
 @router.get("/threads/{thread_id}/graph")
 def get_thread_graph(thread_id: str):
     """Return the Neo4j subgraph for a thread (nodes + edges)."""

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
-from langsmith import Client
 from dotenv import load_dotenv
+
+from src.langsmith_client import get_langsmith_client
 import logging
 import sys
 
@@ -80,7 +81,7 @@ Handle errors gracefully and validate inputs before execution.
 
 if __name__ == "__main__":
     try:
-        langsmith_client = Client()
+        langsmith_client = get_langsmith_client()
 
         prompts = [
             (

@@ -151,9 +151,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <Plus className="h-4 w-4 shrink-0" />
           <span>New Thread</span>
         </Button>
-        <Button className="w-full group" variant="default">
-          <span>Run Baselines</span>
-        </Button>
       </SidebarFooter>
     </Sidebar>
   );
