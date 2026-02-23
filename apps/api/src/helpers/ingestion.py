@@ -74,10 +74,18 @@ def clear_thread_redis(payload_store, run_ids: list[str]) -> None:
     logger.info("Redis thread payloads — %s key(s) deleted.", deleted)
 
 
-def auto_ingest(thread_id: str, max_retries: int = 3) -> list | None:
+def auto_ingest(
+    thread_id: str,
+    max_retries: int = 5,
+    initial_delay: float = 2.0,
+    stabilize_rounds: int = 2,
+) -> list | None:
     """Ingest a single thread into Neo4j + Redis without clearing existing data.
 
-    Retries with exponential backoff when LangSmith hasn't indexed the runs yet.
+    Waits for the LangSmith run count to stabilize (same count over
+    ``stabilize_rounds`` consecutive fetches) before building the graph,
+    so that late-indexed runs (e.g. code_executor) are not dropped.
+
     Returns the list of Turn objects on success (so sentinel can reuse them),
     or None on failure.
     """
@@ -88,19 +96,44 @@ def auto_ingest(thread_id: str, max_retries: int = 3) -> list | None:
 
     project = os.getenv("LANGSMITH_PROJECT")
 
+    time.sleep(initial_delay)
+
     run_dicts: list[dict] = []
+    prev_count = 0
+    stable = 0
     for attempt in range(max_retries):
         if attempt > 0:
-            time.sleep(2**attempt)
+            time.sleep(min(2**attempt, 8))
         run_dicts = fetch_runs_for_thread(thread_id, project_name=project)
-        if run_dicts:
-            break
-        logger.info(
-            "Auto-ingest attempt %d/%d for thread %s: no runs yet, retrying…",
-            attempt + 1,
-            max_retries,
-            thread_id,
-        )
+        cur_count = len(run_dicts)
+        if cur_count == 0:
+            logger.info(
+                "Auto-ingest attempt %d/%d for thread %s: no runs yet, retrying…",
+                attempt + 1,
+                max_retries,
+                thread_id,
+            )
+            stable = 0
+        elif cur_count == prev_count:
+            stable += 1
+            if stable >= stabilize_rounds:
+                logger.info(
+                    "Auto-ingest for thread %s: run count stabilized at %d",
+                    thread_id[:16],
+                    cur_count,
+                )
+                break
+        else:
+            logger.info(
+                "Auto-ingest attempt %d/%d for thread %s: %d runs (was %d), waiting…",
+                attempt + 1,
+                max_retries,
+                thread_id[:16],
+                cur_count,
+                prev_count,
+            )
+            stable = 0
+        prev_count = cur_count
 
     if not run_dicts:
         logger.warning(

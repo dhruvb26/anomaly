@@ -9,6 +9,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from src import state
 from src.helpers.ingestion import auto_ingest
 from src.helpers.sentinel import run_sentinel
@@ -47,6 +49,8 @@ async def run_thread(thread_id: str, body: RunRequest):
             ]
     except Exception:
         logger.exception("Failed to read final state for thread %s", thread_id)
+
+    await asyncio.to_thread(wait_for_all_tracers)
 
     turns = None
     try:
