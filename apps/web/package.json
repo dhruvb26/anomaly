@@ -21,8 +21,8 @@
     "@neo4j-nvl/react": "^1.1.0",
     "@t3-oss/env-nextjs": "^0.13.10",
     "@tailwindcss/postcss": "^4.1.18",
-    "@trigger.dev/react-hooks": "4.4.1",
-    "@trigger.dev/sdk": "4.4.1",
+    "@trigger.dev/react-hooks": "4.4.3",
+    "@trigger.dev/sdk": "4.4.3",
     "@uiw/react-json-view": "^2.0.0-alpha.41",
     "@xyflow/react": "^12.10.0",
     "class-variance-authority": "^0.7.1",
@@ -45,7 +45,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@trigger.dev/build": "4.4.1",
+    "@trigger.dev/build": "4.4.3",
     "@types/dagre": "^0.7.53",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",

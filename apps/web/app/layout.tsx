@@ -27,12 +27,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+      <ThemeProvider
+            attribute="class"
+            forcedTheme="light"
+            disableTransitionOnChange
+          >
           <MobileWarning />
           <Toaster richColors position="bottom-left" />
           <ToolDescriptionsProvider>
