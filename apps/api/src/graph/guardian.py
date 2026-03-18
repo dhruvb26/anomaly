@@ -1,4 +1,9 @@
-"""IBM Granite Guardian 3.3 client via Ollama local REST API."""
+"""IBM Granite Guardian client via Ollama local REST API.
+
+Supports both response formats:
+- Granite 3.3 8b:  <score>yes</score> / <score>no</score> tags
+- Granite 3.2 2b/3b: "Yes\\n<confidence> High </confidence>" plain-text
+"""
 
 from __future__ import annotations
 
@@ -14,15 +19,52 @@ from src.graph.config import sentinel_config
 
 logger = logging.getLogger(__name__)
 
-_SCORE_RE = re.compile(r"<score>\s*(yes|no)\s*</score>", re.IGNORECASE)
+# Granite 3.3 8b: <score>yes</score> / <score>no</score>
+_SCORE_TAG_RE = re.compile(r"<score>\s*(yes|no)\s*</score>", re.IGNORECASE)
+# Granite 3.2 2b/3b: <confidence> High </confidence>
+_CONFIDENCE_TAG_RE = re.compile(r"<confidence>\s*(high|medium|low)\s*</confidence>", re.IGNORECASE)
+# Last-resort: first standalone yes/no word
+_VERDICT_WORD_RE = re.compile(r"\b(yes|no)\b", re.IGNORECASE)
+
+_CONFIDENCE_MAP = {"high": 0.9, "medium": 0.6, "low": 0.3}
 
 
-def _parse_score(raw: str) -> bool | None:
-    """Extract yes/no verdict from Guardian's <score> tag. Returns None if unparseable."""
-    match = _SCORE_RE.search(raw)
+def _parse_response(raw: str) -> tuple[bool | None, float | None]:
+    """Extract (verdict, model_confidence) from a Guardian response.
+
+    Returns (None, None) if the verdict cannot be determined.
+    model_confidence is only populated when the model emits a <confidence> tag
+    (Granite 3.2 2b/3b); callers fall back to confidence_threshold otherwise.
+
+    Format priority:
+    1. <score>yes/no</score>           — Granite 3.3 8b
+    2. First word + <confidence> tag   — Granite 3.2 2b/3b ("Yes\\n<confidence> High </confidence>")
+    3. First word yes/no (no tag)      — plain-text fallback
+    4. First yes/no word anywhere      — last resort
+    """
+    if not raw:
+        return None, None
+
+    # Format 1: structured XML tag (3.3 8b) — no confidence tag in this format
+    match = _SCORE_TAG_RE.search(raw)
     if match:
-        return match.group(1).lower() == "yes"
-    return None
+        return match.group(1).lower() == "yes", None
+
+    # Format 2 & 3: plain text — first word is the verdict
+    first_word = raw.strip().split()[0].rstrip(".,!?:;").lower() if raw.strip() else ""
+    if first_word in ("yes", "no"):
+        verdict = first_word == "yes"
+        conf_match = _CONFIDENCE_TAG_RE.search(raw)
+        model_confidence = _CONFIDENCE_MAP.get(conf_match.group(1).lower()) if conf_match else None
+        return verdict, model_confidence
+
+    # Format 4: yes/no anywhere as a whole word (last resort)
+    match = _VERDICT_WORD_RE.search(raw)
+    if match:
+        logger.debug("Guardian: verdict extracted via fallback word search from: %r", raw[:80])
+        return match.group(1).lower() == "yes", None
+
+    return None, None
 
 
 @dataclass(slots=True)
@@ -36,7 +78,12 @@ class GuardianResult:
 
 
 class GuardianClient:
-    """Ollama-based IBM Granite Guardian 3.3 client for jailbreak and hallucination detection."""
+    """Ollama-based IBM Granite Guardian client for jailbreak and hallucination detection.
+
+    Compatible with both Granite Guardian model series:
+    - 3.3 (e.g. ibm/granite3.3-guardian:8b) — outputs <score>yes/no</score> tags
+    - 3.2 (e.g. ibm/granite3.2-guardian:3b, 2b) — outputs plain-text verdicts
+    """
 
     def __init__(
         self,
@@ -114,14 +161,18 @@ class GuardianClient:
             )
         prompt = f"jailbreak\n\n<|user|>\n{user_content[:8000]}"
         raw = self._generate(prompt)
-        verdict = _parse_score(raw)
+        verdict, model_confidence = _parse_response(raw)
         if verdict is None:
-            logger.warning("Guardian: unparseable jailbreak response (len=%d)", len(raw))
+            logger.warning(
+                "Guardian: unparseable jailbreak response (len=%d) raw=%r", len(raw), raw[:80]
+            )
             return GuardianResult(
                 is_anomalous=False, confidence=0.0, risk_type="jailbreak", reason="unparseable_response"
             )
         is_anomalous = verdict
-        confidence = self.confidence_threshold if is_anomalous else (1.0 - self.confidence_threshold)
+        confidence = model_confidence if model_confidence is not None else (
+            self.confidence_threshold if is_anomalous else (1.0 - self.confidence_threshold)
+        )
         logger.debug("Guardian jailbreak -> %s (conf=%.2f)", "ANOMALOUS" if is_anomalous else "ok", confidence)
         return GuardianResult(
             is_anomalous=is_anomalous,
@@ -150,9 +201,12 @@ class GuardianClient:
         prompt = "\n\n".join(prompt_parts)
 
         raw = self._generate(prompt)
-        verdict = _parse_score(raw)
+        verdict, model_confidence = _parse_response(raw)
         if verdict is None:
-            logger.warning("Guardian: unparseable hallucination response for tool=%s (len=%d)", tool_name, len(raw))
+            logger.warning(
+                "Guardian: unparseable hallucination response for tool=%s (len=%d) raw=%r",
+                tool_name, len(raw), raw[:80],
+            )
             return GuardianResult(
                 is_anomalous=False,
                 confidence=0.0,
@@ -160,7 +214,9 @@ class GuardianClient:
                 reason="unparseable_response",
             )
         is_anomalous = verdict
-        confidence = self.confidence_threshold if is_anomalous else (1.0 - self.confidence_threshold)
+        confidence = model_confidence if model_confidence is not None else (
+            self.confidence_threshold if is_anomalous else (1.0 - self.confidence_threshold)
+        )
         logger.debug("Guardian hallucination [%s] -> %s (conf=%.2f)", tool_name, "ANOMALOUS" if is_anomalous else "ok", confidence)
         return GuardianResult(
             is_anomalous=is_anomalous,

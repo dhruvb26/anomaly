@@ -1,7 +1,7 @@
 sentinel:
   guardian:
     enabled: true
-    model: "ibm/granite3.3-guardian:8b"
+    model: "ibm/granite3.2-guardian:3b"
     base_url: "http://localhost:11434"
     confidence_threshold: 0.5
 
